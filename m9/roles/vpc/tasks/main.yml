@@ -87,3 +87,9 @@
 - name: "{{ hostname }} — vPC status"
   debug:
     msg: "vPC domain {{ vpc_domain }}: {{ 'peer adjacency formed' if 'peer adjacency formed ok' in vpc_status.stdout[0] else 'NOT YET FORMED' }}"
+
+- name: "{{ hostname }} — Configure errdisable recovery"
+  cisco.nxos.nxos_config:
+    lines:
+      - "errdisable recovery cause all"
+      - "errdisable recovery interval 30"
