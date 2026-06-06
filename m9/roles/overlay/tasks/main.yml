@@ -1,0 +1,59 @@
+---
+# =============================================================================
+# roles/overlay/tasks/main.yml
+# Module 2: BGP EVPN overlay — spines as Route Reflectors, leaves as clients
+# =============================================================================
+
+# ── BGP global + L2VPN EVPN AF ───────────────────────────────────────────────
+- name: "{{ hostname }} — Configure BGP AS and router-id"
+  cisco.nxos.nxos_config:
+    lines:
+      - "router-id {{ bgp_router_id }}"
+      - "log-neighbor-changes"
+      - "address-family l2vpn evpn"
+    parents: "router bgp {{ bgp_as }}"
+
+# ── Spine: RR neighbors (all leaves peer to spine) ───────────────────────────
+- name: "{{ hostname }} — Configure BGP neighbors (spine RR)"
+  cisco.nxos.nxos_config:
+    lines:
+      - "remote-as {{ bgp_as }}"
+      - "description {{ item.description }}"
+      - "update-source loopback0"
+      - "address-family l2vpn evpn"
+      - "  send-community extended"
+      - "  route-reflector-client"
+    parents:
+      - "router bgp {{ bgp_as }}"
+      - "neighbor {{ item.ip }}"
+  loop: "{{ bgp_neighbors }}"
+  loop_control:
+    label: "neighbor {{ item.ip }}"
+  when: role == 'spine'
+
+# ── Spine: retain all route-targets ──────────────────────────────────────────
+- name: "{{ hostname }} — Retain all route-targets on spine"
+  cisco.nxos.nxos_config:
+    lines:
+      - "retain route-target all"
+    parents:
+      - "router bgp {{ bgp_as }}"
+      - "address-family l2vpn evpn"
+  when: role == 'spine'
+
+# ── Leaf/Border: peer to both route reflectors ───────────────────────────────
+- name: "{{ hostname }} — Configure BGP neighbors (leaf → RR)"
+  cisco.nxos.nxos_config:
+    lines:
+      - "remote-as {{ bgp_as }}"
+      - "description {{ item.description }}"
+      - "update-source loopback0"
+      - "address-family l2vpn evpn"
+      - "  send-community extended"
+    parents:
+      - "router bgp {{ bgp_as }}"
+      - "neighbor {{ item.ip }}"
+  loop: "{{ route_reflectors }}"
+  loop_control:
+    label: "neighbor {{ item.ip }}"
+  when: role in ['leaf', 'border_leaf']

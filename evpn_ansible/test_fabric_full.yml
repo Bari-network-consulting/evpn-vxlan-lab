@@ -1,0 +1,15 @@
+---
+- name: "BGP EVPN/VXLAN — Run Test Matrix"
+  hosts: servers:pcs
+  gather_facts: false
+  serial: 0
+
+  vars:
+    ping_count: 5
+    ping_timeout: 2
+    fail_on_error: false
+
+  tasks:
+    - name: Run test_fabric role
+      include_role:
+        name: test_fabric

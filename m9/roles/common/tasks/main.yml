@@ -1,0 +1,49 @@
+---
+- name: "{{ hostname }} — Set hostname"
+  cisco.nxos.nxos_system:
+    hostname: "{{ hostname }}"
+    state: present
+
+- name: "{{ hostname }} — Configure boot statement"
+  cisco.nxos.nxos_config:
+    lines:
+      - "boot nxos bootflash:/nxos64-cs.10.6.1.F.bin"
+  vars:
+    ansible_command_timeout: 300
+
+- name: "{{ hostname }} — Enable required features"
+  cisco.nxos.nxos_feature:
+    feature: "{{ item }}"
+    state: enabled
+  loop:
+    - ospf
+    - bgp
+    - interface-vlan
+    - vn-segment-vlan-based
+    - nv overlay
+    - lacp
+
+- name: "{{ hostname }} — Enable vPC feature (leaves only)"
+  cisco.nxos.nxos_feature:
+    feature: vpc
+    state: enabled
+  when: vpc_enabled | default(false) | bool
+
+- name: "{{ hostname }} — Enable nv overlay evpn"
+  cisco.nxos.nxos_config:
+    lines:
+      - nv overlay evpn
+
+- name: "{{ hostname }} — Configure management interface"
+  cisco.nxos.nxos_config:
+    lines:
+      - "vrf member management"
+      - "ip address {{ mgmt_ip }}"
+      - "no shutdown"
+    parents: "interface mgmt0"
+
+- name: "{{ hostname }} — Configure management default route"
+  cisco.nxos.nxos_config:
+    lines:
+      - "ip route 0.0.0.0/0 {{ mgmt_gw }}"
+    parents: "vrf context management"

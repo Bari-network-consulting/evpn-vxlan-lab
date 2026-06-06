@@ -1,0 +1,10 @@
+---
+# roles/vxlan/handlers/main.yml
+# Bounce NVE after vPC feature enable to bring source interface up
+
+- name: bounce nve1
+  cisco.nxos.nxos_config:
+    lines:
+      - "shutdown"
+      - "no shutdown"
+    parents: "interface nve1"

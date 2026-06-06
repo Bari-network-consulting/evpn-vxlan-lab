@@ -1,0 +1,33 @@
+---
+# =============================================================================
+# test_fabric.yml
+# BGP EVPN/VXLAN Fabric — Automated End-to-End Test Playbook
+#
+# Runs the full 16-test ping matrix from servers and PCs,
+# evaluates connectivity and VRF isolation, prints a summary,
+# and fails the play if any test does not match expectation.
+#
+# Usage:
+#   ansible-playbook playbooks/test_fabric.yml
+#   ansible-playbook playbooks/test_fabric.yml --tags connectivity
+#   ansible-playbook playbooks/test_fabric.yml --tags isolation
+#   ansible-playbook playbooks/test_fabric.yml -e "ping_count=10"
+#   ansible-playbook playbooks/test_fabric.yml -e "fail_on_error=false"
+#
+# Exit codes:
+#   0  — all tests passed
+#   2  — one or more tests failed (Ansible default for task failure)
+# =============================================================================
+
+- name: "BGP EVPN/VXLAN — End-to-End Fabric Test Suite"
+  hosts: servers:pcs
+  gather_facts: false
+  serial: 0                         # run all devices in parallel
+
+  vars:
+    ping_count: 5                   # pings per test
+    ping_timeout: 2                 # seconds per ping
+    fail_on_error: true             # set false to collect all results before failing
+
+  roles:
+    - test_fabric

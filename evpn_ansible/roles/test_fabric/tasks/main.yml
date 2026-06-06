@@ -1,0 +1,77 @@
+---
+- name: "Filter test matrix for {{ inventory_hostname }}"
+  set_fact:
+    my_tests: "{{ test_matrix | selectattr('src', 'equalto', inventory_hostname) | list }}"
+
+- name: "Skip host if no tests defined"
+  meta: end_host
+  when: my_tests | length == 0
+
+- name: "Run ping tests on {{ inventory_hostname }}"
+  cisco.ios.ios_command:
+    commands:
+      - "ping {{ item.dst }} repeat {{ ping_count }} timeout {{ ping_timeout }}"
+  loop: "{{ my_tests }}"
+  loop_control:
+    label: "Test {{ item.id }}: {{ item.dst }}"
+  register: ping_results
+  ignore_errors: true
+
+- name: "Evaluate test results for {{ inventory_hostname }}"
+  set_fact:
+    test_results: "{{ test_results | default([]) + [result_entry] }}"
+  vars:
+    raw_output: "{{ ping_results.results[index].stdout[0] | default('') }}"
+    bang_count: "{{ raw_output | regex_findall('!') | length }}"
+    dot_count:  "{{ raw_output | regex_findall('\\.') | length }}"
+    total_count: "{{ (bang_count | int) + (dot_count | int) }}"
+    success_rate: >-
+      {{
+        ((bang_count | int * 100) // (total_count | int))
+        if (total_count | int) > 0
+        else 0
+      }}
+    actual_result: "{{ 'pass' if (bang_count | int) > 0 else 'fail' }}"
+    verdict: "{{ 'PASS' if actual_result == item.expected else 'FAIL' }}"
+    result_entry:
+      id:           "{{ item.id }}"
+      device:       "{{ inventory_hostname }}"
+      dst:          "{{ item.dst }}"
+      description:  "{{ item.description }}"
+      category:     "{{ item.category }}"
+      expected:     "{{ item.expected }}"
+      actual:       "{{ actual_result }}"
+      success_rate: "{{ success_rate }}"
+      verdict:      "{{ verdict }}"
+      raw:          "{{ raw_output | truncate(120, True) }}"
+  loop: "{{ my_tests }}"
+  loop_control:
+    index_var: index
+    label: "Test {{ item.id }}: {{ item.dst }}"
+
+- name: "Results for {{ inventory_hostname }}"
+  debug:
+    msg: >-
+      [{{ item.verdict }}]
+      Test {{ '%02d' | format(item.id | int) }}
+      → {{ item.dst }}
+      exp={{ item.expected | upper }}
+      act={{ item.actual | upper }}
+      rate={{ item.success_rate }}%
+      | {{ item.description }}
+  loop: "{{ test_results }}"
+  loop_control:
+    label: "Test {{ item.id }}"
+
+- name: "Assert all tests passed on {{ inventory_hostname }}"
+  assert:
+    that:
+      - item.verdict == 'PASS'
+    fail_msg: >-
+      FAILED Test {{ item.id }}: {{ item.description }}
+      expected={{ item.expected }} actual={{ item.actual }} rate={{ item.success_rate }}%
+    success_msg: "PASS Test {{ item.id }}: {{ item.description }}"
+  loop: "{{ test_results }}"
+  loop_control:
+    label: "Test {{ item.id }}"
+  ignore_errors: "{{ not (fail_on_error | bool) }}"

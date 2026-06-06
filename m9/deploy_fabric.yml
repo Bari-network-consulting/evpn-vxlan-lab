@@ -1,0 +1,236 @@
+---
+# =============================================================================
+# deploy_fabric.yml
+# BGP EVPN/VXLAN Fabric — Full Automated Deployment
+#
+# Deploys Modules 1-7 on all NX-OS fabric nodes in sequence,
+# then runs the end-to-end test suite automatically.
+#
+# Usage:
+#   ansible-playbook deploy_fabric.yml
+#   ansible-playbook deploy_fabric.yml --tags underlay
+#   ansible-playbook deploy_fabric.yml --tags overlay,vxlan
+#   ansible-playbook deploy_fabric.yml --skip-tags wipe
+#   ansible-playbook deploy_fabric.yml -e "run_tests=false"
+#   ansible-playbook deploy_fabric.yml --limit LEAF-01
+#
+# Tags:
+#   wipe        — wipe all configs (destructive — skippable)
+#   common      — features, hostname, boot, mgmt
+#   underlay    — OSPF, loopbacks, P2P links
+#   overlay     — BGP EVPN, route reflectors
+#   vxlan       — NVE, L2 VNI
+#   irb         — VRFs, L3 VNI, anycast gateway
+#   vpc         — vPC domain, peer-link, server ports
+#   border      — border leaf sub-interfaces and eBGP
+#   verify      — end-to-end test suite
+# =============================================================================
+
+# ─── Play 1: Wipe all fabric nodes ───────────────────────────────────────────
+- name: "STEP 0 — Wipe NX-OS fabric nodes"
+  hosts: fabric
+  gather_facts: false
+  tags: [wipe]
+
+  tasks:
+    - name: "{{ inventory_hostname }} — Wipe running config"
+      cisco.nxos.nxos_command:
+        commands:
+          - command: "write erase"
+            prompt: "This command will erase the startup-configuration"
+            answer: "y"
+      ignore_errors: true
+
+    - name: "{{ inventory_hostname }} — Reload device"
+      cisco.nxos.nxos_command:
+        commands:
+          - command: "reload"
+            prompt: "This command will reboot the system"
+            answer: "y"
+      ignore_errors: true
+
+    - name: "Wait for devices to come back up (90 seconds)"
+      wait_for:
+        host: "{{ ansible_host }}"
+        port: 22
+        delay: 30
+        timeout: 180
+      delegate_to: localhost
+
+# ─── Play 2: Common — features, hostname, mgmt ───────────────────────────────
+- name: "STEP 1 — Common configuration"
+  hosts: fabric
+  gather_facts: false
+  serial: 0
+  tags: [common]
+
+  roles:
+    - common
+
+# ─── Play 3: Underlay — OSPF ─────────────────────────────────────────────────
+- name: "STEP 2 — Underlay (OSPF)"
+  hosts: fabric
+  gather_facts: false
+  serial: 0
+  tags: [underlay]
+
+  roles:
+    - underlay
+
+# ─── Play 4: Verify OSPF before continuing ───────────────────────────────────
+- name: "STEP 2 verify — OSPF adjacencies"
+  hosts: fabric
+  gather_facts: false
+  tags: [underlay]
+
+  tasks:
+    - name: "{{ inventory_hostname }} — Wait for OSPF adjacencies"
+      cisco.nxos.nxos_command:
+        commands:
+          - "show ip ospf neighbors"
+        wait_for:
+          - "result[0] contains 'FULL'"
+        interval: 5
+        retries: 12
+      register: ospf_check
+      ignore_errors: true
+
+    - name: "{{ inventory_hostname }} — OSPF status"
+      debug:
+        msg: "OSPF: {{ 'adjacencies FULL' if 'FULL' in ospf_check.stdout[0] else 'NOT YET FULL — check underlay' }}"
+
+# ─── Play 5: Overlay — BGP EVPN ──────────────────────────────────────────────
+- name: "STEP 3 — Overlay (BGP EVPN)"
+  hosts: fabric
+  gather_facts: false
+  serial: 0
+  tags: [overlay]
+
+  roles:
+    - overlay
+
+# ─── Play 6: VXLAN — NVE, L2 VNI ────────────────────────────────────────────
+- name: "STEP 4 — VXLAN L2 VNI"
+  hosts: fabric
+  gather_facts: false
+  serial: 0
+  tags: [vxlan]
+
+  roles:
+    - vxlan
+
+# ─── Play 7: IRB — VRFs, anycast GW ─────────────────────────────────────────
+- name: "STEP 5 — Symmetric IRB"
+  hosts: fabric
+  gather_facts: false
+  serial: 0
+  tags: [irb]
+
+  roles:
+    - irb
+
+# ─── Play 8: vPC — peer-link, server ports ───────────────────────────────────
+- name: "STEP 6 — vPC dual-homing"
+  hosts: leaves
+  gather_facts: false
+  serial: 0
+  tags: [vpc]
+
+  roles:
+    - vpc
+
+# ─── Play 9: Border leaf — eBGP per VRF ──────────────────────────────────────
+- name: "STEP 7 — Border leaf"
+  hosts: border_leaf
+  gather_facts: false
+  tags: [border]
+
+  roles:
+    - border_leaf
+
+# ─── Play 10: Save all configs ───────────────────────────────────────────────
+- name: "STEP 8 — Save configurations"
+  hosts: fabric
+  gather_facts: false
+  tags: [save]
+
+  tasks:
+    - name: "{{ inventory_hostname }} — Save config"
+      cisco.nxos.nxos_config:
+        save_when: always
+
+# ─── Play 11: End-to-end test suite ─────────────────────────────────────────
+- name: "STEP 9 — End-to-end verification"
+  hosts: servers:pcs
+  gather_facts: false
+  serial: 0
+  tags: [verify]
+
+  vars:
+    ping_count: 5
+    ping_timeout: 2
+    fail_on_error: false
+
+  roles:
+    - test_fabric
+
+- name: "STEP 9 — Test report"
+  hosts: localhost
+  gather_facts: false
+  tags: [verify]
+
+  vars:
+    test_devices:
+      - SRV1-TEN-A
+      - SRV1-TEN-B
+      - SRV2-TEN-A
+      - SRV2-TEN-B
+      - PC1-TEN-A
+      - PC2-TEN-B
+
+  tasks:
+    - name: Aggregate all test results
+      set_fact:
+        all_results: >-
+          {{
+            all_results | default([]) +
+            (hostvars[item].test_results | default([]))
+          }}
+      loop: "{{ test_devices }}"
+
+    - name: Sort results by test ID
+      set_fact:
+        all_results_sorted: "{{ all_results | sort(attribute='id') }}"
+
+    - name: Calculate statistics
+      set_fact:
+        total_tests:        "{{ all_results_sorted | length }}"
+        passed_tests:       "{{ all_results_sorted | selectattr('verdict', 'equalto', 'PASS') | list | length }}"
+        failed_tests:       "{{ all_results_sorted | selectattr('verdict', 'equalto', 'FAIL') | list | length }}"
+        connectivity_pass:  "{{ all_results_sorted | selectattr('category', 'equalto', 'connectivity') | selectattr('verdict', 'equalto', 'PASS') | list | length }}"
+        connectivity_total: "{{ all_results_sorted | selectattr('category', 'equalto', 'connectivity') | list | length }}"
+        isolation_pass:     "{{ all_results_sorted | selectattr('category', 'equalto', 'isolation') | selectattr('verdict', 'equalto', 'PASS') | list | length }}"
+        isolation_total:    "{{ all_results_sorted | selectattr('category', 'equalto', 'isolation') | list | length }}"
+
+    - name: Print final test summary
+      debug:
+        msg:
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "  BGP EVPN/VXLAN FABRIC — DEPLOYMENT + TEST SUMMARY"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "  Total tests       : {{ total_tests }}"
+          - "  Passed            : {{ passed_tests }}"
+          - "  Failed            : {{ failed_tests }}"
+          - "  ────────────────────────────────────────────────────"
+          - "  Connectivity tests: {{ connectivity_pass }}/{{ connectivity_total }} passed"
+          - "  Isolation tests   : {{ isolation_pass }}/{{ isolation_total }} passed"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "  {{ 'FABRIC DEPLOYMENT SUCCESSFUL ✓' if failed_tests | int == 0 else 'FABRIC DEPLOYMENT FAILED ✗ — ' + failed_tests | string + ' tests failed' }}"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    - name: "Final assertion"
+      assert:
+        that:
+          - failed_tests | int == 0
+        fail_msg: "DEPLOYMENT FAILED: {{ failed_tests }} of {{ total_tests }} tests did not pass"
+        success_msg: "DEPLOYMENT SUCCESSFUL: All {{ total_tests }} tests passed"

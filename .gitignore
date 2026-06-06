@@ -1,0 +1,7 @@
+*.retry
+*.pyc
+__pycache__/
+.ansible/
+*.log
+*.tmp
+/tmp/

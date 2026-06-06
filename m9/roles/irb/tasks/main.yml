@@ -1,0 +1,93 @@
+---
+# =============================================================================
+# roles/irb/tasks/main.yml
+# Module 4: Symmetric IRB — VRFs, L3 VNI VLANs, anycast SVIs, BGP VRF AF
+# =============================================================================
+
+# ── Anycast gateway MAC (global) ──────────────────────────────────────────────
+- name: "{{ hostname }} — Configure anycast gateway MAC"
+  cisco.nxos.nxos_config:
+    lines:
+      - "fabric forwarding anycast-gateway-mac {{ anycast_gw_mac }}"
+
+# ── L3 VNI VLANs ─────────────────────────────────────────────────────────────
+- name: "{{ hostname }} — Configure L3 VNI VLANs"
+  cisco.nxos.nxos_config:
+    lines:
+      - "name L3VNI-{{ item.vrf }}"
+      - "vn-segment {{ item.l3vni }}"
+    parents: "vlan {{ item.l3vni_vlan }}"
+  loop: "{{ tenants }}"
+  loop_control:
+    label: "VLAN {{ item.l3vni_vlan }} → L3VNI {{ item.l3vni }}"
+
+# ── VRF contexts ──────────────────────────────────────────────────────────────
+- name: "{{ hostname }} — Configure VRF contexts"
+  cisco.nxos.nxos_config:
+    lines:
+      - "vni {{ item.l3vni }}"
+      - "rd auto"
+      - "address-family ipv4 unicast"
+      - "  route-target both auto"
+      - "  route-target both auto evpn"
+    parents: "vrf context {{ item.vrf }}"
+  loop: "{{ tenants }}"
+  loop_control:
+    label: "VRF {{ item.vrf }}"
+
+# ── Anycast gateway SVIs ──────────────────────────────────────────────────────
+- name: "{{ hostname }} — Configure anycast gateway SVIs"
+  cisco.nxos.nxos_config:
+    lines:
+      - "description {{ item.vrf }}-SERVERS-GW"
+      - "vrf member {{ item.vrf }}"
+      - "ip address {{ item.anycast_gw }}"
+      - "fabric forwarding mode anycast-gateway"
+      - "no shutdown"
+    parents: "interface vlan{{ item.svi_vlan }}"
+  loop: "{{ tenants }}"
+  loop_control:
+    label: "SVI VLAN {{ item.svi_vlan }} — {{ item.anycast_gw }}"
+
+# ── L3 VNI SVIs ───────────────────────────────────────────────────────────────
+- name: "{{ hostname }} — Configure L3 VNI SVIs"
+  cisco.nxos.nxos_config:
+    lines:
+      - "description L3VNI-{{ item.vrf }}"
+      - "vrf member {{ item.vrf }}"
+      - "ip forward"
+      - "no shutdown"
+    parents: "interface vlan{{ item.l3vni_vlan }}"
+  loop: "{{ tenants }}"
+  loop_control:
+    label: "L3VNI SVI VLAN {{ item.l3vni_vlan }}"
+
+# ── NVE L3 VNI bindings ───────────────────────────────────────────────────────
+- name: "{{ hostname }} — Bind L3 VNIs to NVE"
+  cisco.nxos.nxos_config:
+    lines:
+      - "member vni {{ item.l3vni }} associate-vrf"
+    parents: "interface nve1"
+  loop: "{{ tenants }}"
+  loop_control:
+    label: "L3VNI {{ item.l3vni }} → {{ item.vrf }}"
+
+# ── BGP VRF address-family ────────────────────────────────────────────────────
+- name: "{{ hostname }} — Configure BGP VRF address-family"
+  cisco.nxos.nxos_config:
+    lines:
+      - "address-family ipv4 unicast"
+      - "  redistribute direct route-map PERMIT-ALL"
+      - "  export-gateway-ip"
+    parents:
+      - "router bgp {{ bgp_as }}"
+      - "vrf {{ item.vrf }}"
+  loop: "{{ tenants }}"
+  loop_control:
+    label: "BGP VRF {{ item.vrf }}"
+
+# ── Route-map PERMIT-ALL ──────────────────────────────────────────────────────
+- name: "{{ hostname }} — Configure route-map PERMIT-ALL"
+  cisco.nxos.nxos_config:
+    lines:
+      - "route-map PERMIT-ALL permit 10"
