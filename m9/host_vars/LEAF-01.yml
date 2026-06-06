@@ -1,0 +1,45 @@
+---
+hostname: LEAF-01
+role: leaf
+loopback0_ip: "10.0.0.11/32"
+loopback1_primary: "10.0.0.111/32"
+loopback1_secondary: "10.0.0.200/32"    # shared anycast VTEP with LEAF-02
+router_id: "10.0.0.11"
+bgp_router_id: "10.0.0.11"
+mgmt_ip: "192.168.1.12/24"
+mgmt_gw: "192.168.1.1"
+
+underlay_interfaces:
+  - name: Ethernet1/1
+    description: to_SPINE-01_E1/1
+    ip: "172.16.1.1/31"
+  - name: Ethernet1/2
+    description: to_SPINE-02_E1/1
+    ip: "172.16.2.1/31"
+
+# vPC configuration
+vpc_enabled: true
+vpc_domain: 10
+vpc_role: primary
+vpc_keepalive_src: "192.168.1.12"
+vpc_keepalive_dst: "192.168.1.13"
+vpc_peer_link_interfaces:
+  - Ethernet1/5
+  - Ethernet1/6
+vpc_keepalive_interface: Ethernet1/9
+vpc_keepalive_ip: "192.168.100.0/31"
+
+# Server-facing vPC port-channels
+vpc_server_ports:
+  - po_id: 11
+    vpc_id: 11
+    vlan: 10
+    description: SRV1-TEN-A
+    interfaces:
+      - Ethernet1/3
+  - po_id: 12
+    vpc_id: 12
+    vlan: 20
+    description: SRV1-TEN-B
+    interfaces:
+      - Ethernet1/4

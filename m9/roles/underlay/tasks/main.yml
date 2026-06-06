@@ -1,0 +1,53 @@
+---
+- name: "{{ hostname }} — Configure OSPF process"
+  cisco.nxos.nxos_config:
+    lines:
+      - "router-id {{ router_id }}"
+    parents: "router ospf {{ ospf_process }}"
+
+- name: "{{ hostname }} — Configure loopback0"
+  cisco.nxos.nxos_config:
+    lines:
+      - "description router-id"
+      - "ip address {{ loopback0_ip }}"
+      - "ip router ospf {{ ospf_process }} area {{ ospf_area }}"
+      - "no shutdown"
+    parents: "interface loopback0"
+
+- name: "{{ hostname }} — Configure loopback1 (leaf primary + secondary)"
+  cisco.nxos.nxos_config:
+    lines:
+      - "description VTEP-SOURCE"
+      - "ip address {{ loopback1_primary }}"
+      - "ip address {{ loopback1_secondary }} secondary"
+      - "ip router ospf {{ ospf_process }} area {{ ospf_area }}"
+      - "no shutdown"
+    parents: "interface loopback1"
+  when: loopback1_primary is defined and loopback1_secondary is defined
+
+- name: "{{ hostname }} — Configure loopback1 (leaf-05 single IP)"
+  cisco.nxos.nxos_config:
+    lines:
+      - "description VTEP-SOURCE"
+      - "ip address {{ loopback1_ip }}"
+      - "ip router ospf {{ ospf_process }} area {{ ospf_area }}"
+      - "no shutdown"
+    parents: "interface loopback1"
+  when: loopback1_ip is defined and loopback1_primary is not defined
+
+- name: "{{ hostname }} — Configure P2P underlay interfaces"
+  cisco.nxos.nxos_config:
+    lines:
+      - "description {{ item.description }}"
+      - "no switchport"
+      - "mtu 9216"
+      - "ip address {{ item.ip }}"
+      - "ip ospf network point-to-point"
+      - "ip ospf hello-interval 1"
+      - "ip ospf dead-interval 4"
+      - "ip router ospf {{ ospf_process }} area {{ ospf_area }}"
+      - "no shutdown"
+    parents: "interface {{ item.name }}"
+  loop: "{{ underlay_interfaces }}"
+  loop_control:
+    label: "{{ item.name }} — {{ item.ip }}"

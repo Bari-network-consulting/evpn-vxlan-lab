@@ -1,0 +1,150 @@
+---
+# =============================================================================
+# roles/test_fabric/vars/main.yml
+# Test matrix — one entry per test case
+#
+# Fields:
+#   id          — unique test number
+#   src         — Ansible inventory hostname (must match hosts: in playbook)
+#   dst         — IP address to ping
+#   expected    — "pass" (connectivity expected) | "fail" (must be isolated)
+#   category    — connectivity | isolation
+#   description — human-readable description
+#   tags        — list of Ansible tags for selective execution
+# =============================================================================
+
+test_matrix:
+
+  # ── TENANT-A east-west ──────────────────────────────────────────────────────
+  - id: 1
+    src: SRV1-TEN-A
+    dst: "10.10.10.21"
+    expected: pass
+    category: connectivity
+    description: "SRV1-TEN-A → SRV2-TEN-A  [same tenant L2 VXLAN]"
+    tags: [connectivity, tenant_a, east_west]
+
+  - id: 2
+    src: SRV2-TEN-A
+    dst: "10.10.10.11"
+    expected: pass
+    category: connectivity
+    description: "SRV2-TEN-A → SRV1-TEN-A  [same tenant L2 VXLAN]"
+    tags: [connectivity, tenant_a, east_west]
+
+  # ── TENANT-A server → PC (L3 via border leaf) ──────────────────────────────
+  - id: 3
+    src: SRV1-TEN-A
+    dst: "192.168.10.3"
+    expected: pass
+    category: connectivity
+    description: "SRV1-TEN-A → PC1-TEN-A   [L3 border leaf eBGP]"
+    tags: [connectivity, tenant_a, border_leaf]
+
+  - id: 4
+    src: SRV2-TEN-A
+    dst: "192.168.10.3"
+    expected: pass
+    category: connectivity
+    description: "SRV2-TEN-A → PC1-TEN-A   [L3 border leaf eBGP]"
+    tags: [connectivity, tenant_a, border_leaf]
+
+  # ── TENANT-B east-west ──────────────────────────────────────────────────────
+  - id: 5
+    src: SRV1-TEN-B
+    dst: "10.20.20.21"
+    expected: pass
+    category: connectivity
+    description: "SRV1-TEN-B → SRV2-TEN-B  [same tenant L2 VXLAN]"
+    tags: [connectivity, tenant_b, east_west]
+
+  - id: 6
+    src: SRV2-TEN-B
+    dst: "10.20.20.11"
+    expected: pass
+    category: connectivity
+    description: "SRV2-TEN-B → SRV1-TEN-B  [same tenant L2 VXLAN]"
+    tags: [connectivity, tenant_b, east_west]
+
+  # ── TENANT-B server → PC (L3 via border leaf) ──────────────────────────────
+  - id: 7
+    src: SRV1-TEN-B
+    dst: "192.168.20.3"
+    expected: pass
+    category: connectivity
+    description: "SRV1-TEN-B → PC2-TEN-B   [L3 border leaf eBGP]"
+    tags: [connectivity, tenant_b, border_leaf]
+
+  - id: 8
+    src: SRV2-TEN-B
+    dst: "192.168.20.3"
+    expected: pass
+    category: connectivity
+    description: "SRV2-TEN-B → PC2-TEN-B   [L3 border leaf eBGP]"
+    tags: [connectivity, tenant_b, border_leaf]
+
+  # ── PC → servers (L3 inbound via border leaf) ──────────────────────────────
+  - id: 9
+    src: PC1-TEN-A
+    dst: "10.10.10.11"
+    expected: pass
+    category: connectivity
+    description: "PC1-TEN-A  → SRV1-TEN-A  [L3 inbound]"
+    tags: [connectivity, tenant_a, inbound]
+
+  - id: 10
+    src: PC1-TEN-A
+    dst: "10.10.10.21"
+    expected: pass
+    category: connectivity
+    description: "PC1-TEN-A  → SRV2-TEN-A  [L3 inbound]"
+    tags: [connectivity, tenant_a, inbound]
+
+  - id: 11
+    src: PC2-TEN-B
+    dst: "10.20.20.11"
+    expected: pass
+    category: connectivity
+    description: "PC2-TEN-B  → SRV1-TEN-B  [L3 inbound]"
+    tags: [connectivity, tenant_b, inbound]
+
+  - id: 12
+    src: PC2-TEN-B
+    dst: "10.20.20.21"
+    expected: pass
+    category: connectivity
+    description: "PC2-TEN-B  → SRV2-TEN-B  [L3 inbound]"
+    tags: [connectivity, tenant_b, inbound]
+
+  # ── Cross-tenant isolation (must FAIL — isolation working) ──────────────────
+  - id: 13
+    src: SRV1-TEN-A
+    dst: "10.20.20.11"
+    expected: fail
+    category: isolation
+    description: "SRV1-TEN-A → SRV1-TEN-B  [ISOLATION — must be blocked]"
+    tags: [isolation, cross_tenant]
+
+  - id: 14
+    src: SRV1-TEN-B
+    dst: "10.10.10.11"
+    expected: fail
+    category: isolation
+    description: "SRV1-TEN-B → SRV1-TEN-A  [ISOLATION — must be blocked]"
+    tags: [isolation, cross_tenant]
+
+  - id: 15
+    src: PC1-TEN-A
+    dst: "10.20.20.11"
+    expected: fail
+    category: isolation
+    description: "PC1-TEN-A  → SRV1-TEN-B  [ISOLATION — must be blocked]"
+    tags: [isolation, cross_tenant]
+
+  - id: 16
+    src: PC2-TEN-B
+    dst: "10.10.10.11"
+    expected: fail
+    category: isolation
+    description: "PC2-TEN-B  → SRV1-TEN-A  [ISOLATION — must be blocked]"
+    tags: [isolation, cross_tenant]

@@ -1,0 +1,45 @@
+---
+- name: Configure Servers and PCs
+  hosts: servers:pcs
+  gather_facts: false
+
+  tasks:
+    - name: Create Port-channel1 on servers
+      cisco.ios.ios_config:
+        lines:
+          - "no switchport"
+          - "ip address {{ server_ip }} {{ server_mask }}"
+          - "no shutdown"
+        parents: "interface Port-channel1"
+      when: inventory_hostname in groups['servers']
+      ignore_errors: true
+
+    - name: Configure server physical interfaces with channel-group
+      cisco.ios.ios_config:
+        lines:
+          - "no switchport"
+          - "channel-group 1 mode active"
+          - "no shutdown"
+        parents: "interface {{ item }}"
+      loop:
+        - Ethernet0/0
+        - Ethernet0/1
+      when: inventory_hostname in groups['servers']
+      ignore_errors: true
+
+    - name: Configure Ethernet0/0 IP on PCs
+      cisco.ios.ios_config:
+        lines:
+          - "ip address {{ server_ip }} {{ server_mask }}"
+          - "no shutdown"
+        parents: "interface Ethernet0/0"
+      when: inventory_hostname in groups['pcs']
+
+    - name: Configure default route
+      cisco.ios.ios_config:
+        lines:
+          - "ip route 0.0.0.0 0.0.0.0 {{ default_gw }}"
+
+    - name: Save config
+      cisco.ios.ios_config:
+        save_when: always

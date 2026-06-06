@@ -1,0 +1,3 @@
+server_ip: "10.20.20.21"
+server_mask: "255.255.255.0"
+default_gw: "10.20.20.1"
