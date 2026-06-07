@@ -1,0 +1,124 @@
+---
+- name: "DC1 — Module 4: Symmetric IRB"
+  hosts: dc1_fabric
+  gather_facts: false
+  serial: 0
+
+  tasks:
+    - name: "{{ hostname }} — Configure anycast gateway MAC"
+      cisco.nxos.nxos_config:
+        lines:
+          - "fabric forwarding anycast-gateway-mac {{ anycast_gw_mac }}"
+
+    - name: "{{ hostname }} — Configure L3 VNI VLANs"
+      cisco.nxos.nxos_config:
+        lines:
+          - "vn-segment {{ item.l3vni }}"
+        parents: "vlan {{ item.l3vni_vlan }}"
+      loop: "{{ tenants }}"
+      loop_control:
+        label: "VLAN {{ item.l3vni_vlan }} → L3VNI {{ item.l3vni }}"
+
+    - name: "{{ hostname }} — Configure VRFs"
+      cisco.nxos.nxos_config:
+        lines:
+          - "vni {{ item.l3vni }}"
+          - "rd auto"
+          - "address-family ipv4 unicast"
+          - "  route-target both auto"
+          - "  route-target both auto evpn"
+        parents: "vrf context {{ item.vrf }}"
+      loop: "{{ tenants }}"
+      loop_control:
+        label: "VRF {{ item.vrf }}"
+
+    - name: "{{ hostname }} — Enable IP routing per VRF"
+      cisco.nxos.nxos_config:
+        lines:
+          - "ip routing vrf {{ item.vrf }}"
+      loop: "{{ tenants }}"
+      loop_control:
+        label: "VRF {{ item.vrf }}"
+
+    - name: "{{ hostname }} — Configure L2 VNI SVIs (anycast gateway)"
+      cisco.nxos.nxos_config:
+        lines:
+          - "description {{ item.svi_name }}"
+          - "no shutdown"
+          - "vrf member {{ item.vrf }}"
+          - "ip address {{ item.anycast_gw }}"
+          - "fabric forwarding mode anycast-gateway"
+        parents: "interface vlan{{ item.svi_vlan }}"
+      loop: "{{ tenants }}"
+      loop_control:
+        label: "Vlan{{ item.svi_vlan }} — {{ item.anycast_gw }}"
+      when: role in ['leaf', 'border_leaf']
+
+    - name: "{{ hostname }} — Configure L3 VNI SVIs"
+      cisco.nxos.nxos_config:
+        lines:
+          - "no shutdown"
+          - "vrf member {{ item.vrf }}"
+          - "ip forward"
+        parents: "interface vlan{{ item.l3vni_vlan }}"
+      loop: "{{ tenants }}"
+      loop_control:
+        label: "Vlan{{ item.l3vni_vlan }} — VRF {{ item.vrf }}"
+      when: role in ['leaf', 'border_leaf']
+
+    - name: "{{ hostname }} — Add L3 VNI to NVE"
+      cisco.nxos.nxos_config:
+        lines:
+          - "associate-vrf"
+        parents:
+          - "interface nve1"
+          - "member vni {{ item.l3vni }}"
+      loop: "{{ tenants }}"
+      loop_control:
+        label: "L3VNI {{ item.l3vni }}"
+      when: role in ['leaf', 'border_leaf']
+
+    - name: "{{ hostname }} — Configure BGP per VRF"
+      cisco.nxos.nxos_config:
+        lines:
+          - "address-family ipv4 unicast"
+          - "  advertise l2vpn evpn"
+          - "  maximum-paths ibgp 4"
+          - "  redistribute direct route-map PERMIT-ALL"
+        parents:
+          - "router bgp {{ bgp_as }}"
+          - "vrf {{ item.vrf }}"
+      loop: "{{ tenants }}"
+      loop_control:
+        label: "BGP VRF {{ item.vrf }}"
+      when: role in ['leaf', 'border_leaf']
+
+    - name: "{{ hostname }} — Configure route-map PERMIT-ALL"
+      cisco.nxos.nxos_config:
+        lines:
+          - "match ip address prefix-list ALL"
+        parents: "route-map PERMIT-ALL permit 10"
+
+    - name: "{{ hostname }} — Configure prefix-list ALL"
+      cisco.nxos.nxos_config:
+        lines:
+          - "ip prefix-list ALL permit 0.0.0.0/0 le 32"
+
+- name: "DC1 — Module 4: Verify IRB"
+  hosts: dc1_leaves:dc1_border
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Verify NVE VNIs including L3"
+      cisco.nxos.nxos_command:
+        commands:
+          - "show nve vni"
+      register: nve_check
+
+    - name: "{{ hostname }} — NVE VNI count"
+      debug:
+        msg: "NVE VNIs Up: {{ nve_check.stdout[0] | regex_findall('Up') | length }} (expected {{ tenants | length * 2 }})"
+
+    - name: "Save configuration"
+      cisco.nxos.nxos_config:
+        save_when: always

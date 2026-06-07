@@ -1,0 +1,131 @@
+---
+- name: "DC1 — Module 1: Common Configuration"
+  hosts: dc1_fabric
+  gather_facts: false
+  serial: 0
+
+  tasks:
+    - name: "{{ hostname }} — Set hostname"
+      cisco.nxos.nxos_system:
+        hostname: "{{ hostname }}"
+        state: present
+
+    - name: "{{ hostname }} — Enable required features"
+      cisco.nxos.nxos_feature:
+        feature: "{{ item }}"
+        state: enabled
+      loop:
+        - ospf
+        - bgp
+        - interface-vlan
+        - vn-segment-vlan-based
+        - nv overlay
+        - lacp
+
+    - name: "{{ hostname }} — Enable vPC feature (leaves only)"
+      cisco.nxos.nxos_feature:
+        feature: vpc
+        state: enabled
+      when: vpc_enabled | default(false) | bool
+
+    - name: "{{ hostname }} — Enable nv overlay evpn"
+      cisco.nxos.nxos_config:
+        lines:
+          - nv overlay evpn
+
+    - name: "{{ hostname }} — Configure management interface"
+      cisco.nxos.nxos_config:
+        lines:
+          - "vrf member management"
+          - "ip address {{ mgmt_ip }}"
+          - "no shutdown"
+        parents: "interface mgmt0"
+
+    - name: "{{ hostname }} — Configure management default route"
+      cisco.nxos.nxos_config:
+        lines:
+          - "ip route 0.0.0.0/0 {{ mgmt_gw }}"
+        parents: "vrf context management"
+
+- name: "DC1 — Module 1: OSPF Underlay"
+  hosts: dc1_fabric
+  gather_facts: false
+  serial: 0
+
+  tasks:
+    - name: "{{ hostname }} — Configure OSPF process"
+      cisco.nxos.nxos_config:
+        lines:
+          - "router-id {{ router_id }}"
+        parents: "router ospf {{ ospf_process }}"
+
+    - name: "{{ hostname }} — Configure loopback0"
+      cisco.nxos.nxos_config:
+        lines:
+          - "description router-id"
+          - "ip address {{ loopback0_ip }}"
+          - "ip router ospf {{ ospf_process }} area {{ ospf_area }}"
+          - "no shutdown"
+        parents: "interface loopback0"
+
+    - name: "{{ hostname }} — Configure loopback1 (leaf primary + secondary)"
+      cisco.nxos.nxos_config:
+        lines:
+          - "description VTEP-SOURCE"
+          - "ip address {{ loopback1_primary }}"
+          - "ip address {{ loopback1_secondary }} secondary"
+          - "ip router ospf {{ ospf_process }} area {{ ospf_area }}"
+          - "no shutdown"
+        parents: "interface loopback1"
+      when: loopback1_primary is defined and loopback1_secondary is defined
+
+    - name: "{{ hostname }} — Configure loopback1 (N-LEAF-05)"
+      cisco.nxos.nxos_config:
+        lines:
+          - "description VTEP-SOURCE"
+          - "ip address {{ loopback1_ip }}"
+          - "ip router ospf {{ ospf_process }} area {{ ospf_area }}"
+          - "no shutdown"
+        parents: "interface loopback1"
+      when: loopback1_ip is defined and loopback1_primary is not defined
+
+    - name: "{{ hostname }} — Configure P2P underlay interfaces"
+      cisco.nxos.nxos_config:
+        lines:
+          - "description {{ item.description }}"
+          - "no switchport"
+          - "mtu 9216"
+          - "ip address {{ item.ip }}"
+          - "ip ospf network point-to-point"
+          - "ip ospf hello-interval 1"
+          - "ip ospf dead-interval 4"
+          - "ip router ospf {{ ospf_process }} area {{ ospf_area }}"
+          - "no shutdown"
+        parents: "interface {{ item.name }}"
+      loop: "{{ underlay_interfaces }}"
+      loop_control:
+        label: "{{ item.name }} — {{ item.ip }}"
+
+- name: "DC1 — Module 1: Verify OSPF"
+  hosts: dc1_fabric
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Wait for OSPF adjacencies"
+      cisco.nxos.nxos_command:
+        commands:
+          - "show ip ospf neighbors"
+        wait_for:
+          - "result[0] contains 'FULL'"
+        interval: 5
+        retries: 12
+      register: ospf_check
+      ignore_errors: true
+
+    - name: "{{ hostname }} — OSPF status"
+      debug:
+        msg: "OSPF: {{ 'adjacencies FULL ✓' if 'FULL' in ospf_check.stdout[0] else 'NOT FULL — check underlay ✗' }}"
+
+    - name: "Save configuration"
+      cisco.nxos.nxos_config:
+        save_when: always

@@ -1,0 +1,40 @@
+---
+ansible_connection: ansible.netcommon.network_cli
+ansible_network_os: cisco.nxos.nxos
+ansible_user: admin
+ansible_password: Admin1234!
+ansible_become: false
+
+bgp_as: 65000
+ospf_process: 1
+ospf_area: "0.0.0.0"
+
+tenants:
+  - name: TENANT-A
+    vrf: TENANT-A
+    l2vni: 10010
+    l3vni: 50001
+    l3vni_vlan: 3967
+    svi_vlan: 10
+    svi_name: TEN-A-SERVERS
+    anycast_gw: "10.10.10.1/24"
+    rt: "65000:50001"
+  - name: TENANT-B
+    vrf: TENANT-B
+    l2vni: 10020
+    l3vni: 50002
+    l3vni_vlan: 3966
+    svi_vlan: 20
+    svi_name: TEN-B-SERVERS
+    anycast_gw: "10.20.20.1/24"
+    rt: "65000:50002"
+
+anycast_gw_mac: "0001.0001.0001"
+
+route_reflectors:
+  - ip: "10.0.0.1"
+    description: "N-SPINE-01-RR"
+  - ip: "10.0.0.2"
+    description: "N-SPINE-02-RR"
+
+nxos_image: "nxos64-cs.10.6.1.F.bin"

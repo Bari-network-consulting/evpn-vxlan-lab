@@ -1,0 +1,42 @@
+---
+- name: "DC1 — Wipe all fabric nodes"
+  hosts: dc1_fabric
+  gather_facts: false
+  tags: [wipe, never]
+  tasks:
+    - name: "{{ hostname }} — Wipe configuration"
+      cisco.nxos.nxos_config:
+        lines:
+          - "write erase"
+
+- name: "DC1 — Step 1: OSPF Underlay"
+  import_playbook: module01_ospf_underlay.yml
+  tags: [module01, underlay]
+
+- name: "DC1 — Step 2: BGP EVPN"
+  import_playbook: module02_bgp_evpn.yml
+  tags: [module02, overlay]
+
+- name: "DC1 — Step 3: VXLAN L2 VNI"
+  import_playbook: module03_vxlan_l2vni.yml
+  tags: [module03, vxlan]
+
+- name: "DC1 — Step 4: Symmetric IRB"
+  import_playbook: module04_symmetric_irb.yml
+  tags: [module04, irb]
+
+- name: "DC1 — Step 5: vPC Pair 1"
+  import_playbook: module05_vpc_pair1.yml
+  tags: [module05, vpc_pair1]
+
+- name: "DC1 — Step 6: vPC Pair 2"
+  import_playbook: module06_vpc_pair2.yml
+  tags: [module06, vpc_pair2]
+
+- name: "DC1 — Step 7: Border Leaf"
+  import_playbook: module07_border_leaf.yml
+  tags: [module07, border_leaf]
+
+- name: "DC1 — Step 8: End-to-End Verification"
+  import_playbook: module08_verify.yml
+  tags: [module08, verify]
