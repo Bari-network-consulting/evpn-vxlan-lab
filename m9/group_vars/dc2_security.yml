@@ -1,0 +1,4 @@
+---
+ansible_user: admin
+ansible_password: Admin1234!
+ansible_connection: local
