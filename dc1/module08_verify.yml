@@ -1,0 +1,157 @@
+---
+- name: "DC1 — Module 8: Configure IOS Devices"
+  hosts: dc1_servers
+  gather_facts: false
+
+  tasks:
+    - name: "Configure server Port-channel1"
+      cisco.ios.ios_config:
+        lines:
+          - "no switchport"
+          - "ip address {{ server_ip }} {{ server_mask }}"
+          - "no shutdown"
+        parents: "interface Port-channel1"
+
+    - name: "Configure server default route"
+      cisco.ios.ios_config:
+        lines:
+          - "ip route 0.0.0.0 0.0.0.0 {{ server_gw }}"
+
+- name: "DC1 — Module 8: Configure PCs"
+  hosts: pcs
+  gather_facts: false
+
+  tasks:
+    - name: "Configure PC interface"
+      cisco.ios.ios_config:
+        lines:
+          - "ip address {{ pc_ip }} {{ pc_mask }}"
+          - "no shutdown"
+        parents: "interface Ethernet0/0"
+
+    - name: "Configure PC default route"
+      cisco.ios.ios_config:
+        lines:
+          - "ip route 0.0.0.0 0.0.0.0 {{ pc_gw }}"
+
+- name: "DC1 — Module 8: End-to-End Verification"
+  hosts: dc1_ios
+  gather_facts: false
+
+  vars:
+    test_matrix:
+      - { id: 1,  src: SRV1-TEN-A, dst: "10.10.10.21",  expected: pass, description: "SRV1-TEN-A → SRV2-TEN-A  [L2 VXLAN TENANT-A]" }
+      - { id: 2,  src: SRV2-TEN-A, dst: "10.10.10.11",  expected: pass, description: "SRV2-TEN-A → SRV1-TEN-A  [L2 VXLAN TENANT-A]" }
+      - { id: 3,  src: SRV1-TEN-A, dst: "192.168.10.3", expected: pass, description: "SRV1-TEN-A → PC1-TEN-A   [L3 border leaf eBGP]" }
+      - { id: 4,  src: SRV2-TEN-A, dst: "192.168.10.3", expected: pass, description: "SRV2-TEN-A → PC1-TEN-A   [L3 border leaf eBGP]" }
+      - { id: 5,  src: SRV1-TEN-B, dst: "10.20.20.21",  expected: pass, description: "SRV1-TEN-B → SRV2-TEN-B  [L2 VXLAN TENANT-B]" }
+      - { id: 6,  src: SRV2-TEN-B, dst: "10.20.20.11",  expected: pass, description: "SRV2-TEN-B → SRV1-TEN-B  [L2 VXLAN TENANT-B]" }
+      - { id: 7,  src: SRV1-TEN-B, dst: "192.168.20.3", expected: pass, description: "SRV1-TEN-B → PC2-TEN-B   [L3 border leaf eBGP]" }
+      - { id: 8,  src: SRV2-TEN-B, dst: "192.168.20.3", expected: pass, description: "SRV2-TEN-B → PC2-TEN-B   [L3 border leaf eBGP]" }
+      - { id: 9,  src: PC1-TEN-A,  dst: "10.10.10.11",  expected: pass, description: "PC1-TEN-A  → SRV1-TEN-A  [L3 inbound]" }
+      - { id: 10, src: PC1-TEN-A,  dst: "10.10.10.21",  expected: pass, description: "PC1-TEN-A  → SRV2-TEN-A  [L3 inbound]" }
+      - { id: 11, src: PC2-TEN-B,  dst: "10.20.20.11",  expected: pass, description: "PC2-TEN-B  → SRV1-TEN-B  [L3 inbound]" }
+      - { id: 12, src: PC2-TEN-B,  dst: "10.20.20.21",  expected: pass, description: "PC2-TEN-B  → SRV2-TEN-B  [L3 inbound]" }
+      - { id: 13, src: SRV1-TEN-A, dst: "10.20.20.11",  expected: fail, description: "SRV1-TEN-A → SRV1-TEN-B  [ISOLATION cross-tenant]" }
+      - { id: 14, src: SRV1-TEN-B, dst: "10.10.10.11",  expected: fail, description: "SRV1-TEN-B → SRV1-TEN-A  [ISOLATION cross-tenant]" }
+      - { id: 15, src: PC1-TEN-A,  dst: "10.20.20.11",  expected: fail, description: "PC1-TEN-A  → SRV1-TEN-B  [ISOLATION cross-tenant]" }
+      - { id: 16, src: PC2-TEN-B,  dst: "10.10.10.11",  expected: fail, description: "PC2-TEN-B  → SRV1-TEN-A  [ISOLATION cross-tenant]" }
+
+  tasks:
+    - name: "Filter tests for this host"
+      set_fact:
+        my_tests: "{{ test_matrix | selectattr('src', 'equalto', inventory_hostname) | list }}"
+
+    - name: "Skip host if no tests defined"
+      meta: end_host
+      when: my_tests | length == 0
+
+    - name: "Run ping tests"
+      cisco.ios.ios_command:
+        commands:
+          - "ping {{ item.dst }} repeat 5"
+      register: ping_results
+      loop: "{{ my_tests }}"
+      loop_control:
+        label: "Test {{ item.id }}: {{ item.dst }}"
+      ignore_errors: true
+
+    - name: "Evaluate test results"
+      set_fact:
+        test_results: "{{ test_results | default([]) + [
+          {
+            'id': item.0.id | string,
+            'device': inventory_hostname,
+            'description': item.0.description,
+            'dst': item.0.dst,
+            'expected': item.0.expected,
+            'actual': 'pass' if (item.1.stdout[0] | default('') | regex_search('Success rate is ([0-9]+)', '\\1') | first | default('0') | int) >= 40 else 'fail',
+            'success_rate': (item.1.stdout[0] | default('') | regex_search('Success rate is ([0-9]+)', '\\1') | first | default('0')),
+            'verdict': 'PASS' if (
+              (item.0.expected == 'pass' and (item.1.stdout[0] | default('') | regex_search('Success rate is ([0-9]+)', '\\1') | first | default('0') | int) >= 40) or
+              (item.0.expected == 'fail' and (item.1.stdout[0] | default('') | regex_search('Success rate is ([0-9]+)', '\\1') | first | default('0') | int) < 40)
+            ) else 'FAIL'
+          }
+        ] }}"
+      loop: "{{ my_tests | zip(ping_results.results) | list }}"
+      loop_control:
+        label: "Test {{ item.0.id }}"
+
+    - name: "Display results"
+      debug:
+        msg: "[{{ item.verdict }}] Test {{ '%02d' | format(item.id | int) }} → {{ item.dst }} exp={{ item.expected | upper }} act={{ item.actual | upper }} rate={{ item.success_rate }}% | {{ item.description }}"
+      loop: "{{ test_results }}"
+      loop_control:
+        label: "Test {{ item.id }}"
+
+    - name: "Assert all tests passed"
+      assert:
+        that: item.verdict == 'PASS'
+        fail_msg: "FAILED Test {{ item.id }}: {{ item.description }}"
+        success_msg: "PASS Test {{ item.id }}"
+      loop: "{{ test_results }}"
+      loop_control:
+        label: "Test {{ item.id }}"
+      ignore_errors: true
+
+- name: "DC1 — Module 8: Test Report"
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: "Aggregate all results"
+      set_fact:
+        all_results: "{{ all_results | default([]) + hostvars[item].test_results | default([]) }}"
+      loop: [SRV1-TEN-A, SRV1-TEN-B, SRV2-TEN-A, SRV2-TEN-B, PC1-TEN-A, PC2-TEN-B]
+
+    - name: "Calculate statistics"
+      set_fact:
+        total: "{{ all_results | length }}"
+        passed: "{{ all_results | selectattr('verdict', 'equalto', 'PASS') | list | length }}"
+        failed: "{{ all_results | selectattr('verdict', 'equalto', 'FAIL') | list | length }}"
+        conn_pass: "{{ all_results | selectattr('expected', 'equalto', 'pass') | selectattr('verdict', 'equalto', 'PASS') | list | length }}"
+        conn_total: "{{ all_results | selectattr('expected', 'equalto', 'pass') | list | length }}"
+        iso_pass: "{{ all_results | selectattr('expected', 'equalto', 'fail') | selectattr('verdict', 'equalto', 'PASS') | list | length }}"
+        iso_total: "{{ all_results | selectattr('expected', 'equalto', 'fail') | list | length }}"
+
+    - name: "Print summary"
+      debug:
+        msg:
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "  BGP EVPN/VXLAN DC1 — VERIFICATION SUMMARY"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "  Total tests       : {{ total }}"
+          - "  Passed            : {{ passed }}"
+          - "  Failed            : {{ failed }}"
+          - "  ────────────────────────────────────────────────────"
+          - "  Connectivity tests: {{ conn_pass }}/{{ conn_total }} passed"
+          - "  Isolation tests   : {{ iso_pass }}/{{ iso_total }} passed"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "  {{ 'DC1 VERIFICATION SUCCESSFUL ✓' if failed | int == 0 else 'DC1 VERIFICATION FAILED ✗ — ' + failed | string + ' tests failed' }}"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    - name: "Final assertion"
+      assert:
+        that: failed | int == 0
+        fail_msg: "FAILED: {{ failed }} of {{ total }} tests did not pass"
+        success_msg: "SUCCESS: All {{ total }} tests passed"

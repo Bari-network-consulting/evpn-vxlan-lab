@@ -1,0 +1,69 @@
+---
+- name: "DC1 — Module 3: VXLAN L2 VNI"
+  hosts: dc1_fabric
+  gather_facts: false
+  serial: 0
+
+  tasks:
+    - name: "{{ hostname }} — Configure L2 VNI VLANs"
+      cisco.nxos.nxos_config:
+        lines:
+          - "name {{ item.svi_name }}"
+          - "vn-segment {{ item.l2vni }}"
+        parents: "vlan {{ item.svi_vlan }}"
+      loop: "{{ tenants }}"
+      loop_control:
+        label: "VLAN {{ item.svi_vlan }} → VNI {{ item.l2vni }}"
+
+    - name: "{{ hostname }} — Configure EVPN L2 VNI instances"
+      cisco.nxos.nxos_config:
+        lines:
+          - "rd auto"
+          - "route-target import auto"
+          - "route-target export auto"
+        parents:
+          - "evpn"
+          - "vni {{ item.l2vni }} l2"
+      loop: "{{ tenants }}"
+      loop_control:
+        label: "VNI {{ item.l2vni }}"
+
+    - name: "{{ hostname }} — Configure NVE interface"
+      cisco.nxos.nxos_config:
+        lines:
+          - "no shutdown"
+          - "host-reachability protocol bgp"
+          - "source-interface loopback1"
+        parents: "interface nve1"
+      when: role in ['leaf', 'border_leaf']
+
+    - name: "{{ hostname }} — Configure NVE L2 VNI members"
+      cisco.nxos.nxos_config:
+        lines:
+          - "ingress-replication protocol bgp"
+        parents:
+          - "interface nve1"
+          - "member vni {{ item.l2vni }}"
+      loop: "{{ tenants }}"
+      loop_control:
+        label: "VNI {{ item.l2vni }}"
+      when: role in ['leaf', 'border_leaf']
+
+- name: "DC1 — Module 3: Verify VXLAN"
+  hosts: dc1_leaves:dc1_border
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Verify NVE VNIs"
+      cisco.nxos.nxos_command:
+        commands:
+          - "show nve vni"
+      register: nve_check
+
+    - name: "{{ hostname }} — NVE status"
+      debug:
+        msg: "NVE VNIs Up: {{ nve_check.stdout[0] | regex_findall('Up') | length }}"
+
+    - name: "Save configuration"
+      cisco.nxos.nxos_config:
+        save_when: always

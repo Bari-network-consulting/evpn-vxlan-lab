@@ -1,0 +1,100 @@
+---
+- name: "DC1 — Module 5: vPC Pair 1 (N-LEAF-01/02)"
+  hosts: dc1_vpc_pair1
+  gather_facts: false
+  serial: 0
+
+  tasks:
+    - name: "{{ hostname }} — Configure errdisable recovery"
+      cisco.nxos.nxos_config:
+        lines:
+          - "errdisable recovery cause all"
+          - "errdisable recovery interval 30"
+
+    - name: "{{ hostname }} — Configure vPC domain"
+      cisco.nxos.nxos_config:
+        lines:
+          - "peer-switch"
+          - "peer-keepalive destination {{ vpc_keepalive_dst }} source {{ vpc_keepalive_src }} vrf management"
+          - "peer-gateway"
+          - "auto-recovery"
+          - "ip arp synchronize"
+          - "delay restore 150"
+          - "delay restore interface-vlan 150"
+        parents: "vpc domain {{ vpc_domain }}"
+
+    - name: "{{ hostname }} — Configure vPC peer-link port-channel"
+      cisco.nxos.nxos_config:
+        lines:
+          - "description vPC-PEER-LINK"
+          - "switchport mode trunk"
+          - "switchport trunk allowed vlan 1-3967"
+          - "spanning-tree port type network"
+          - "vpc peer-link"
+        parents: "interface port-channel10"
+
+    - name: "{{ hostname }} — Add interfaces to peer-link"
+      cisco.nxos.nxos_config:
+        lines:
+          - "description vPC-PEER-LINK"
+          - "switchport mode trunk"
+          - "channel-group 10 force mode active"
+          - "no shutdown"
+        parents: "interface {{ item }}"
+      loop: "{{ vpc_peer_link_interfaces }}"
+      loop_control:
+        label: "{{ item }} → Po10"
+
+    - name: "{{ hostname }} — Configure loopback1 anycast secondary"
+      cisco.nxos.nxos_config:
+        lines:
+          - "ip address {{ loopback1_primary }}"
+          - "ip address {{ loopback1_secondary }} secondary"
+        parents: "interface loopback1"
+
+    - name: "{{ hostname }} — Configure server-facing port-channels"
+      cisco.nxos.nxos_config:
+        lines:
+          - "description {{ item.description }}"
+          - "switchport mode access"
+          - "switchport access vlan {{ item.vlan }}"
+          - "spanning-tree port type edge"
+          - "vpc {{ item.vpc_id }}"
+        parents: "interface port-channel{{ item.po_id }}"
+      loop: "{{ vpc_server_ports }}"
+      loop_control:
+        label: "Po{{ item.po_id }} — vPC {{ item.vpc_id }}"
+
+    - name: "{{ hostname }} — Add server interfaces to port-channels"
+      cisco.nxos.nxos_config:
+        lines:
+          - "channel-group {{ item.0.po_id }} force mode active"
+          - "no shutdown"
+        parents: "interface {{ item.1 }}"
+      loop: "{{ vpc_server_ports | subelements('interfaces') }}"
+      loop_control:
+        label: "{{ item.1 }} → Po{{ item.0.po_id }}"
+
+- name: "DC1 — Module 5: Verify vPC Pair 1"
+  hosts: dc1_vpc_pair1
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Wait for vPC peer adjacency"
+      cisco.nxos.nxos_command:
+        commands:
+          - "show vpc"
+        wait_for:
+          - "result[0] contains 'peer adjacency formed ok'"
+        interval: 5
+        retries: 24
+      register: vpc_status
+      ignore_errors: true
+
+    - name: "{{ hostname }} — vPC status"
+      debug:
+        msg: "vPC domain {{ vpc_domain }}: {{ 'peer adjacency formed ✓' if 'peer adjacency formed ok' in vpc_status.stdout[0] else 'NOT FORMED ✗' }}"
+
+    - name: "Save configuration"
+      cisco.nxos.nxos_config:
+        save_when: always

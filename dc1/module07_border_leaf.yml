@@ -1,0 +1,80 @@
+---
+- name: "DC1 — Module 7: Border Leaf eBGP"
+  hosts: dc1_border
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Set parent interface to L3 mode"
+      cisco.nxos.nxos_config:
+        lines:
+          - "no switchport"
+          - "no shutdown"
+          - "mtu 9216"
+        parents: "interface {{ item.name }}"
+      loop: "{{ border_interfaces }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: "{{ hostname }} — Configure sub-interfaces"
+      cisco.nxos.nxos_config:
+        lines:
+          - "description {{ item.1.description }}"
+          - "encapsulation dot1q {{ item.1.dot1q }}"
+          - "vrf member {{ item.1.vrf }}"
+          - "ip address {{ item.1.ip }}"
+          - "no shutdown"
+        parents: "interface {{ item.1.id }}"
+      loop: "{{ border_interfaces | subelements('subifs') }}"
+      loop_control:
+        label: "{{ item.1.id }} — {{ item.1.description }}"
+
+    - name: "{{ hostname }} — Configure BGP per VRF"
+      cisco.nxos.nxos_config:
+        lines:
+          - "address-family ipv4 unicast"
+          - "  advertise l2vpn evpn"
+          - "  redistribute direct route-map PERMIT-ALL"
+        parents:
+          - "router bgp {{ bgp_as }}"
+          - "vrf {{ item.1.vrf }}"
+      loop: "{{ border_interfaces | subelements('subifs') }}"
+      loop_control:
+        label: "BGP VRF {{ item.1.vrf }}"
+
+    - name: "{{ hostname }} — Configure eBGP neighbors per VRF"
+      cisco.nxos.nxos_config:
+        lines:
+          - "remote-as {{ item.1.ebgp_remote_as }}"
+          - "description {{ item.1.description }}"
+          - "address-family ipv4 unicast"
+          - "  send-community extended"
+        parents:
+          - "router bgp {{ bgp_as }}"
+          - "vrf {{ item.1.vrf }}"
+          - "neighbor {{ item.1.ebgp_neighbor }}"
+      loop: "{{ border_interfaces | subelements('subifs') }}"
+      loop_control:
+        label: "neighbor {{ item.1.ebgp_neighbor }} VRF {{ item.1.vrf }}"
+
+- name: "DC1 — Module 7: Verify Border Leaf"
+  hosts: dc1_border
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Verify eBGP sessions"
+      cisco.nxos.nxos_command:
+        commands:
+          - "show bgp vrf {{ item.1.vrf }} ipv4 unicast summary"
+        wait_for:
+          - "result[0] contains 'Established'"
+        interval: 5
+        retries: 12
+      loop: "{{ border_interfaces | subelements('subifs') }}"
+      loop_control:
+        label: "BGP VRF {{ item.1.vrf }}"
+      register: bgp_vrf_status
+      ignore_errors: true
+
+    - name: "Save configuration"
+      cisco.nxos.nxos_config:
+        save_when: always
