@@ -4,7 +4,7 @@
 
 Enterprise-grade dual data center BGP EVPN/VXLAN proof-of-concept lab built in EVE-NG. This project demonstrates a full fabric deployment across two data centers — DC1 running Cisco Nexus NX-OS and DC2 running Arista vEOS — with complete Ansible automation for each module.
 
-**Author:** Abdel — CCIE #20869  
+**Author:** Abdelkrim Bari — www.ciscatel.com  - CCIE #20869  
 **Organization:** [Bari Network Consulting](https://github.com/Bari-network-consulting)  
 **Platform:** EVE-NG  
 **Automation:** Ansible + AWX (192.168.1.102)
@@ -20,12 +20,12 @@ Enterprise-grade dual data center BGP EVPN/VXLAN proof-of-concept lab built in E
 │                                                                     │
 │         N-SPINE-01 (.10)          N-SPINE-02 (.11)                  │
 │              │   │   │   │   │        │   │   │   │   │             │
-│         ─────┼───┼───┼───┼───┼────────┼───┼───┼───┼───┼─────       │
+│         ─────┼───┼───┼───┼───┼────────┼───┼───┼───┼───┼─────        │
 │              │   │   │   │   │        │   │   │   │   │             │
-│  N-LEAF-01 (.12) N-LEAF-02 (.13) N-LEAF-03 (.14) N-LEAF-04 (.15)   │
+│  N-LEAF-01 (.12) N-LEAF-02 (.13) N-LEAF-03 (.14) N-LEAF-04 (.15)    │
 │  [vPC domain 10  ─────────────]  [vPC domain 20  ─────────────]     │
 │       │   │                            │   │                        │
-│  SRV1-TEN-A  SRV1-TEN-B          SRV2-TEN-A  SRV2-TEN-B            │
+│  SRV1-TEN-A  SRV1-TEN-B          SRV2-TEN-A  SRV2-TEN-B             │
 │  10.10.10.11 10.20.20.11         10.10.10.21 10.20.20.21            │
 │                                                                     │
 │              N-LEAF-05 (.16) — Border Leaf                          │
@@ -41,9 +41,9 @@ Enterprise-grade dual data center BGP EVPN/VXLAN proof-of-concept lab built in E
 │                                                                     │
 │         A-SPINE-01 (.30)          A-SPINE-02 (.31)                  │
 │              │   │   │   │   │        │   │   │   │   │             │
-│         ─────┼───┼───┼───┼───┼────────┼───┼───┼───┼───┼─────       │
+│         ─────┼───┼───┼───┼───┼────────┼───┼───┼───┼───┼─────        │
 │              │   │   │   │   │        │   │   │   │   │             │
-│  A-LEAF-01 (.32) A-LEAF-02 (.33) A-LEAF-03 (.34) A-LEAF-04 (.35)   │
+│  A-LEAF-01 (.32) A-LEAF-02 (.33) A-LEAF-03 (.34) A-LEAF-04 (.35)    │
 │  [ESI pair 1     ─────────────]  [ESI pair 2  ────────────────]     │
 │       │   │                            │   │                        │
 │   A-SRV-1    A-SRV-2             A-SRV-3    A-SRV-4                 │
@@ -307,4 +307,6 @@ ansible-playbook module07_verify.yml
 
 ## License
 
-Private repository — Bari Network Consulting
+Public repository — Bari Network Consulting
+www.ciscatel.com
+
