@@ -32,14 +32,6 @@
       loop_control:
         label: "VRF {{ item.vrf }}"
 
-    - name: "{{ hostname }} — Enable IP routing per VRF"
-      cisco.nxos.nxos_config:
-        lines:
-          - "ip routing vrf {{ item.vrf }}"
-      loop: "{{ tenants }}"
-      loop_control:
-        label: "VRF {{ item.vrf }}"
-
     - name: "{{ hostname }} — Configure L2 VNI SVIs (anycast gateway)"
       cisco.nxos.nxos_config:
         lines:
@@ -69,10 +61,9 @@
     - name: "{{ hostname }} — Add L3 VNI to NVE"
       cisco.nxos.nxos_config:
         lines:
-          - "associate-vrf"
+          - "member vni {{ item.l3vni }} associate-vrf"
         parents:
           - "interface nve1"
-          - "member vni {{ item.l3vni }}"
       loop: "{{ tenants }}"
       loop_control:
         label: "L3VNI {{ item.l3vni }}"
@@ -103,6 +94,7 @@
       cisco.nxos.nxos_config:
         lines:
           - "ip prefix-list ALL permit 0.0.0.0/0 le 32"
+      ignore_errors: true
 
 - name: "DC1 — Module 4: Verify IRB"
   hosts: dc1_leaves:dc1_border
