@@ -1,8 +1,9 @@
 ---
-ansible_connection: ansible.netcommon.network_cli
+ansible_connection: ansible.netcommon.httpapi
 ansible_network_os: arista.eos.eos
 ansible_user: admin
 ansible_password: Admin1234!
 ansible_become: true
 ansible_become_method: enable
-ansible_become_password: ""
+ansible_httpapi_use_ssl: false
+ansible_httpapi_validate_certs: false
