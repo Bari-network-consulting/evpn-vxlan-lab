@@ -1,0 +1,42 @@
+---
+ansible_connection: ansible.netcommon.httpapi
+ansible_network_os: arista.eos.eos
+ansible_user: admin
+ansible_password: Admin1234!
+ansible_become: true
+ansible_become_method: enable
+ansible_httpapi_use_ssl: false
+ansible_httpapi_validate_certs: false
+ansible_httpapi_port: 80
+
+bgp_as: 65200
+ospf_process: 1
+ospf_area: "0.0.0.0"
+
+tenants:
+  - name: TENANT-A
+    vrf: TENANT-A
+    l2vni: 10010
+    l3vni: 50001
+    l3vni_vlan: 3967
+    svi_vlan: 10
+    svi_name: TEN-A-SERVERS
+    anycast_gw: "10.30.10.1/24"
+    rt: "65200:50001"
+  - name: TENANT-B
+    vrf: TENANT-B
+    l2vni: 10020
+    l3vni: 50002
+    l3vni_vlan: 3966
+    svi_vlan: 20
+    svi_name: TEN-B-SERVERS
+    anycast_gw: "10.40.20.1/24"
+    rt: "65200:50002"
+
+anycast_gw_mac: "0001.0001.0002"
+
+route_reflectors:
+  - ip: "10.1.0.1"
+    description: "A-SPINE-01-RR"
+  - ip: "10.1.0.2"
+    description: "A-SPINE-02-RR"

@@ -1,0 +1,65 @@
+---
+- name: "DC2 — Module 3: VXLAN L2 VNI"
+  hosts: dc2_fabric
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Configure L2 VNI VLANs"
+      arista.eos.eos_config:
+        lines:
+          - "name {{ item.svi_name }}"
+        parents: "vlan {{ item.svi_vlan }}"
+      loop: "{{ tenants }}"
+      loop_control:
+        label: "VLAN {{ item.svi_vlan }}"
+
+    - name: "{{ hostname }} — Configure VXLAN interface"
+      arista.eos.eos_config:
+        lines:
+          - "vxlan source-interface Loopback1"
+          - "vxlan udp-port 4789"
+        parents: "interface Vxlan1"
+      when: role in ['leaf', 'border_leaf']
+
+    - name: "{{ hostname }} — Map VLANs to VNIs"
+      arista.eos.eos_config:
+        lines:
+          - "vxlan vlan {{ item.svi_vlan }} vni {{ item.l2vni }}"
+        parents: "interface Vxlan1"
+      loop: "{{ tenants }}"
+      loop_control:
+        label: "VLAN {{ item.svi_vlan }} → VNI {{ item.l2vni }}"
+      when: role in ['leaf', 'border_leaf']
+
+    - name: "{{ hostname }} — Configure BGP EVPN L2 VNI"
+      arista.eos.eos_config:
+        lines:
+          - "rd auto"
+          - "route-target both {{ item.l2vni }}:{{ item.l2vni }}"
+          - "redistribute learned"
+        parents:
+          - "router bgp {{ bgp_as }}"
+          - "vlan {{ item.svi_vlan }}"
+      loop: "{{ tenants }}"
+      loop_control:
+        label: "VLAN {{ item.svi_vlan }}"
+      when: role in ['leaf', 'border_leaf']
+
+- name: "DC2 — Module 3: Verify VXLAN"
+  hosts: dc2_leaves:dc2_border
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Verify VXLAN interface"
+      arista.eos.eos_command:
+        commands:
+          - "show vxlan interface"
+      register: vxlan_check
+
+    - name: "{{ hostname }} — VXLAN status"
+      debug:
+        msg: "VXLAN: {{ 'configured ✓' if 'Vxlan1' in vxlan_check.stdout[0] else 'NOT configured ✗' }}"
+
+    - name: "Save configuration"
+      arista.eos.eos_config:
+        save_when: always

@@ -1,0 +1,68 @@
+---
+- name: "DC2 — Module 5: ESI Multihoming"
+  hosts: dc2_leaves
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Skip if ESI not enabled"
+      meta: end_host
+      when: not (esi_enabled | default(false) | bool)
+
+    - name: "{{ hostname }} — Configure server-facing port-channels"
+      arista.eos.eos_config:
+        lines:
+          - "description {{ item.description }}"
+          - "switchport access vlan {{ item.vlan }}"
+          - "switchport mode access"
+          - "spanning-tree portfast"
+          - "no shutdown"
+        parents: "interface Port-Channel{{ item.po_id }}"
+      loop: "{{ esi_server_ports }}"
+      loop_control:
+        label: "Po{{ item.po_id }} — {{ item.description }}"
+
+    - name: "{{ hostname }} — Configure ESI on port-channels"
+      arista.eos.eos_config:
+        lines:
+          - "evpn ethernet-segment"
+          - "  identifier {{ item.esi }}"
+          - "  route-target import {{ item.lacp_id }}"
+          - "lacp system-id {{ item.lacp_id }}"
+        parents: "interface Port-Channel{{ item.po_id }}"
+      loop: "{{ esi_server_ports }}"
+      loop_control:
+        label: "Po{{ item.po_id }} ESI {{ item.esi }}"
+
+    - name: "{{ hostname }} — Add physical interfaces to port-channels"
+      arista.eos.eos_config:
+        lines:
+          - "channel-group {{ item.0.po_id }} mode active"
+          - "no shutdown"
+        parents: "interface {{ item.1 }}"
+      loop: "{{ esi_server_ports | subelements('interfaces') }}"
+      loop_control:
+        label: "{{ item.1 }} → Po{{ item.0.po_id }}"
+
+- name: "DC2 — Module 5: Verify ESI"
+  hosts: dc2_leaves
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Skip if ESI not enabled"
+      meta: end_host
+      when: not (esi_enabled | default(false) | bool)
+
+    - name: "{{ hostname }} — Check ESI status"
+      arista.eos.eos_command:
+        commands:
+          - "show evpn ethernet-segment"
+      register: esi_check
+      ignore_errors: true
+
+    - name: "{{ hostname }} — ESI status"
+      debug:
+        msg: "ESI: {{ 'configured ✓' if esi_check.stdout is defined and esi_check.stdout[0] | length > 10 else 'NOT configured ✗' }}"
+
+    - name: "Save configuration"
+      arista.eos.eos_config:
+        save_when: always

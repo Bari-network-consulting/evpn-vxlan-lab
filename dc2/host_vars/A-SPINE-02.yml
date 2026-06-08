@@ -1,0 +1,20 @@
+---
+hostname: A-SPINE-02
+role: spine
+loopback0_ip: "10.1.0.2/32"
+router_id: "10.1.0.2"
+bgp_router_id: "10.1.0.2"
+mgmt_ip: "192.168.1.31/24"
+mgmt_gw: "192.168.1.1"
+underlay_interfaces:
+  - { name: Ethernet1, description: to_A-LEAF-01_Eth2, ip: "172.16.4.0/31" }
+  - { name: Ethernet2, description: to_A-LEAF-02_Eth2, ip: "172.16.4.2/31" }
+  - { name: Ethernet3, description: to_A-LEAF-03_Eth2, ip: "172.16.4.4/31" }
+  - { name: Ethernet4, description: to_A-LEAF-04_Eth2, ip: "172.16.4.6/31" }
+  - { name: Ethernet5, description: to_A-LEAF-05_Eth2, ip: "172.16.4.8/31" }
+bgp_neighbors:
+  - { ip: "10.1.0.11", description: A-LEAF-01 }
+  - { ip: "10.1.0.12", description: A-LEAF-02 }
+  - { ip: "10.1.0.13", description: A-LEAF-03 }
+  - { ip: "10.1.0.14", description: A-LEAF-04 }
+  - { ip: "10.1.0.15", description: A-LEAF-05 }
