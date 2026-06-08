@@ -53,12 +53,12 @@
     - name: "{{ hostname }} — Verify VXLAN interface"
       arista.eos.eos_command:
         commands:
-          - "show vxlan interface"
+          - "show interfaces Vxlan1"
       register: vxlan_check
 
     - name: "{{ hostname }} — VXLAN status"
       debug:
-        msg: "VXLAN: {{ 'configured ✓' if 'Vxlan1' in vxlan_check.stdout[0] else 'NOT configured ✗' }}"
+        msg: "VXLAN: {{ 'configured ✓' if 'Vxlan1' in vxlan_check.stdout[0] or 'VTEP' in vxlan_check.stdout[0] else 'NOT configured ✗' }}"
 
     - name: "Save configuration"
       arista.eos.eos_config:
