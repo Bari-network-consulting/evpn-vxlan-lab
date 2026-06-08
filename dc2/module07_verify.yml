@@ -1,0 +1,107 @@
+---
+- name: "DC2 — Module 7: Configure DC2 Servers"
+  hosts: dc2_servers
+  gather_facts: false
+
+  tasks:
+    - name: "Configure server Port-channel1"
+      cisco.ios.ios_config:
+        lines:
+          - "no switchport"
+          - "ip address {{ server_ip }} {{ server_mask }}"
+          - "no shutdown"
+        parents: "interface Port-channel1"
+
+    - name: "Configure server default route"
+      cisco.ios.ios_config:
+        lines:
+          - "ip route 0.0.0.0 0.0.0.0 {{ server_gw }}"
+
+- name: "DC2 — Module 7: End-to-End Verification"
+  hosts: dc2_servers
+  gather_facts: false
+
+  vars:
+    test_matrix:
+      - { id: 1, src: A-SRV-1, dst: "10.30.10.21", expected: pass, description: "A-SRV-1 → A-SRV-3  [L2 VXLAN TENANT-A]" }
+      - { id: 2, src: A-SRV-3, dst: "10.30.10.11", expected: pass, description: "A-SRV-3 → A-SRV-1  [L2 VXLAN TENANT-A]" }
+      - { id: 3, src: A-SRV-2, dst: "10.40.20.21", expected: pass, description: "A-SRV-2 → A-SRV-4  [L2 VXLAN TENANT-B]" }
+      - { id: 4, src: A-SRV-4, dst: "10.40.20.11", expected: pass, description: "A-SRV-4 → A-SRV-2  [L2 VXLAN TENANT-B]" }
+      - { id: 5, src: A-SRV-1, dst: "10.40.20.11", expected: fail, description: "A-SRV-1 → A-SRV-2  [ISOLATION cross-tenant]" }
+      - { id: 6, src: A-SRV-2, dst: "10.30.10.11", expected: fail, description: "A-SRV-2 → A-SRV-1  [ISOLATION cross-tenant]" }
+
+  tasks:
+    - name: "Filter tests for this host"
+      set_fact:
+        my_tests: "{{ test_matrix | selectattr('src', 'equalto', inventory_hostname) | list }}"
+
+    - name: "Skip host if no tests defined"
+      meta: end_host
+      when: my_tests | length == 0
+
+    - name: "Run ping tests"
+      cisco.ios.ios_command:
+        commands:
+          - "ping {{ item.dst }} repeat 5"
+      register: ping_results
+      loop: "{{ my_tests }}"
+      loop_control:
+        label: "Test {{ item.id }}: {{ item.dst }}"
+      ignore_errors: true
+
+    - name: "Evaluate test results"
+      set_fact:
+        test_results: "{{ test_results | default([]) + [
+          {
+            'id': item.0.id | string,
+            'device': inventory_hostname,
+            'description': item.0.description,
+            'dst': item.0.dst,
+            'expected': item.0.expected,
+            'actual': 'pass' if (item.1.stdout[0] | default('') | regex_search('Success rate is ([0-9]+)', '\\1') | first | default('0') | int) >= 40 else 'fail',
+            'success_rate': (item.1.stdout[0] | default('') | regex_search('Success rate is ([0-9]+)', '\\1') | first | default('0')),
+            'verdict': 'PASS' if (
+              (item.0.expected == 'pass' and (item.1.stdout[0] | default('') | regex_search('Success rate is ([0-9]+)', '\\1') | first | default('0') | int) >= 40) or
+              (item.0.expected == 'fail' and (item.1.stdout[0] | default('') | regex_search('Success rate is ([0-9]+)', '\\1') | first | default('0') | int) < 40)
+            ) else 'FAIL'
+          }
+        ] }}"
+      loop: "{{ my_tests | zip(ping_results.results) | list }}"
+      loop_control:
+        label: "Test {{ item.0.id }}"
+
+    - name: "Display results"
+      debug:
+        msg: "[{{ item.verdict }}] Test {{ '%02d' | format(item.id | int) }} → {{ item.dst }} exp={{ item.expected | upper }} act={{ item.actual | upper }} rate={{ item.success_rate }}% | {{ item.description }}"
+      loop: "{{ test_results }}"
+      loop_control:
+        label: "Test {{ item.id }}"
+
+- name: "DC2 — Module 7: Test Report"
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: "Aggregate all results"
+      set_fact:
+        all_results: "{{ all_results | default([]) + hostvars[item].test_results | default([]) }}"
+      loop: [A-SRV-1, A-SRV-2, A-SRV-3, A-SRV-4]
+
+    - name: "Calculate statistics"
+      set_fact:
+        total: "{{ all_results | length }}"
+        passed: "{{ all_results | selectattr('verdict', 'equalto', 'PASS') | list | length }}"
+        failed: "{{ all_results | selectattr('verdict', 'equalto', 'FAIL') | list | length }}"
+
+    - name: "Print summary"
+      debug:
+        msg:
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "  BGP EVPN/VXLAN DC2 — VERIFICATION SUMMARY"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "  Total tests : {{ total }}"
+          - "  Passed      : {{ passed }}"
+          - "  Failed      : {{ failed }}"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          - "  {{ 'DC2 VERIFICATION SUCCESSFUL ✓' if failed | int == 0 else 'DC2 VERIFICATION FAILED ✗ — ' + failed | string + ' tests failed' }}"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

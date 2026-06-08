@@ -1,0 +1,101 @@
+---
+- name: "DC2 — Module 2: BGP EVPN Overlay"
+  hosts: dc2_fabric
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Configure BGP AS and router-id"
+      arista.eos.eos_config:
+        lines:
+          - "router-id {{ bgp_router_id }}"
+          - "no bgp default ipv4-unicast"
+          - "distance bgp 20 200 200"
+        parents: "router bgp {{ bgp_as }}"
+
+    - name: "{{ hostname }} — Configure EVPN peer group (spine RR)"
+      arista.eos.eos_config:
+        lines:
+          - "neighbor EVPN-OVERLAY peer group"
+          - "neighbor EVPN-OVERLAY next-hop-unchanged"
+          - "neighbor EVPN-OVERLAY update-source Loopback0"
+          - "neighbor EVPN-OVERLAY bfd"
+          - "neighbor EVPN-OVERLAY ebgp-multihop 3"
+          - "neighbor EVPN-OVERLAY send-community extended"
+          - "neighbor EVPN-OVERLAY route-reflector-client"
+          - "neighbor EVPN-OVERLAY maximum-routes 0"
+        parents: "router bgp {{ bgp_as }}"
+      when: role == 'spine'
+
+    - name: "{{ hostname }} — Configure EVPN neighbors (spine)"
+      arista.eos.eos_config:
+        lines:
+          - "neighbor {{ item.ip }} peer group EVPN-OVERLAY"
+          - "neighbor {{ item.ip }} description {{ item.description }}"
+          - "neighbor {{ item.ip }} remote-as {{ bgp_as }}"
+        parents: "router bgp {{ bgp_as }}"
+      loop: "{{ bgp_neighbors }}"
+      loop_control:
+        label: "neighbor {{ item.ip }}"
+      when: role == 'spine'
+
+    - name: "{{ hostname }} — Configure L2VPN EVPN AF (spine)"
+      arista.eos.eos_config:
+        lines:
+          - "neighbor EVPN-OVERLAY activate"
+        parents:
+          - "router bgp {{ bgp_as }}"
+          - "address-family evpn"
+      when: role == 'spine'
+
+    - name: "{{ hostname }} — Configure EVPN peer group (leaf)"
+      arista.eos.eos_config:
+        lines:
+          - "neighbor EVPN-OVERLAY peer group"
+          - "neighbor EVPN-OVERLAY update-source Loopback0"
+          - "neighbor EVPN-OVERLAY bfd"
+          - "neighbor EVPN-OVERLAY ebgp-multihop 3"
+          - "neighbor EVPN-OVERLAY send-community extended"
+          - "neighbor EVPN-OVERLAY maximum-routes 0"
+        parents: "router bgp {{ bgp_as }}"
+      when: role in ['leaf', 'border_leaf']
+
+    - name: "{{ hostname }} — Configure EVPN neighbors to RR (leaf)"
+      arista.eos.eos_config:
+        lines:
+          - "neighbor {{ item.ip }} peer group EVPN-OVERLAY"
+          - "neighbor {{ item.ip }} description {{ item.description }}"
+          - "neighbor {{ item.ip }} remote-as {{ bgp_as }}"
+        parents: "router bgp {{ bgp_as }}"
+      loop: "{{ route_reflectors }}"
+      loop_control:
+        label: "neighbor {{ item.ip }}"
+      when: role in ['leaf', 'border_leaf']
+
+    - name: "{{ hostname }} — Configure L2VPN EVPN AF (leaf)"
+      arista.eos.eos_config:
+        lines:
+          - "neighbor EVPN-OVERLAY activate"
+        parents:
+          - "router bgp {{ bgp_as }}"
+          - "address-family evpn"
+      when: role in ['leaf', 'border_leaf']
+
+- name: "DC2 — Module 2: Verify BGP EVPN"
+  hosts: dc2_fabric
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Show BGP EVPN summary"
+      arista.eos.eos_command:
+        commands:
+          - "show bgp evpn summary"
+      register: bgp_check
+      ignore_errors: true
+
+    - name: "{{ hostname }} — BGP status"
+      debug:
+        msg: "BGP EVPN: {{ 'sessions Up ✓' if bgp_check.stdout is defined and 'Estab' in bgp_check.stdout[0] else 'Check BGP' }}"
+
+    - name: "Save configuration"
+      arista.eos.eos_config:
+        save_when: always

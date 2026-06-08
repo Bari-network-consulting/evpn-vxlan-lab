@@ -1,0 +1,26 @@
+---
+hostname: A-LEAF-05
+role: border_leaf
+loopback0_ip: "10.1.0.15/32"
+loopback1_ip: "10.1.0.115/32"
+router_id: "10.1.0.15"
+bgp_router_id: "10.1.0.15"
+mgmt_ip: "192.168.1.36/24"
+mgmt_gw: "192.168.1.1"
+esi_enabled: false
+underlay_interfaces:
+  - { name: Ethernet1, description: to_A-SPINE-01_Eth5, ip: "172.16.3.9/31" }
+  - { name: Ethernet2, description: to_A-SPINE-02_Eth5, ip: "172.16.4.9/31" }
+border_interfaces:
+  - name: Ethernet3
+    description: to_Fortinet-FW2_TENANT-A
+    vrf: TENANT-A
+    ip: "172.16.6.253/30"
+    ebgp_neighbor: "172.16.6.254"
+    ebgp_remote_as: 65500
+  - name: Ethernet4
+    description: to_Fortinet-FW2_TENANT-B
+    vrf: TENANT-B
+    ip: "172.16.6.249/30"
+    ebgp_neighbor: "172.16.6.250"
+    ebgp_remote_as: 65500

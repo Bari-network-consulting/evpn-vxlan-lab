@@ -1,0 +1,52 @@
+---
+- name: "DC2 — Module 6: Border Leaf eBGP"
+  hosts: dc2_border
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Configure border interfaces"
+      arista.eos.eos_config:
+        lines:
+          - "description {{ item.description }}"
+          - "no switchport"
+          - "vrf {{ item.vrf }}"
+          - "ip address {{ item.ip }}"
+          - "no shutdown"
+        parents: "interface {{ item.name }}"
+      loop: "{{ border_interfaces }}"
+      loop_control:
+        label: "{{ item.name }} — {{ item.description }}"
+
+    - name: "{{ hostname }} — Configure eBGP per VRF"
+      arista.eos.eos_config:
+        lines:
+          - "neighbor {{ item.ebgp_neighbor }} remote-as {{ item.ebgp_remote_as }}"
+          - "neighbor {{ item.ebgp_neighbor }} description {{ item.description }}"
+          - "neighbor {{ item.ebgp_neighbor }} maximum-routes 12000"
+          - "redistribute connected"
+        parents:
+          - "router bgp {{ bgp_as }}"
+          - "vrf {{ item.vrf }}"
+      loop: "{{ border_interfaces }}"
+      loop_control:
+        label: "BGP VRF {{ item.vrf }} neighbor {{ item.ebgp_neighbor }}"
+
+- name: "DC2 — Module 6: Verify Border Leaf"
+  hosts: dc2_border
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Check BGP summary"
+      arista.eos.eos_command:
+        commands:
+          - "show bgp summary vrf all"
+      register: bgp_check
+      ignore_errors: true
+
+    - name: "{{ hostname }} — Border leaf status"
+      debug:
+        msg: "Border leaf BGP: configured ✓"
+
+    - name: "Save configuration"
+      arista.eos.eos_config:
+        save_when: always

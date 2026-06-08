@@ -1,0 +1,26 @@
+---
+hostname: A-LEAF-01
+role: leaf
+loopback0_ip: "10.1.0.11/32"
+loopback1_ip: "10.1.0.111/32"
+router_id: "10.1.0.11"
+bgp_router_id: "10.1.0.11"
+mgmt_ip: "192.168.1.32/24"
+mgmt_gw: "192.168.1.1"
+underlay_interfaces:
+  - { name: Ethernet1, description: to_A-SPINE-01_Eth1, ip: "172.16.3.1/31" }
+  - { name: Ethernet2, description: to_A-SPINE-02_Eth1, ip: "172.16.4.1/31" }
+esi_enabled: true
+esi_server_ports:
+  - po_id: 1
+    esi: "0000:0000:0000:0000:0001"
+    lacp_id: "0000.0000.0001"
+    vlan: 10
+    description: A-SRV-1-TENANT-A
+    interfaces: [Ethernet3]
+  - po_id: 2
+    esi: "0000:0000:0000:0000:0002"
+    lacp_id: "0000.0000.0002"
+    vlan: 20
+    description: A-SRV-2-TENANT-B
+    interfaces: [Ethernet4]

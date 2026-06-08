@@ -1,0 +1,101 @@
+---
+- name: "DC2 — Module 1: Common Configuration"
+  hosts: dc2_fabric
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Set hostname"
+      arista.eos.eos_config:
+        lines:
+          - "hostname {{ hostname }}"
+
+    - name: "{{ hostname }} — Enable IP routing"
+      arista.eos.eos_config:
+        lines:
+          - "ip routing"
+
+    - name: "{{ hostname }} — Configure service routing"
+      arista.eos.eos_config:
+        lines:
+          - "service routing protocols model multi-agent"
+
+
+
+- name: "DC2 — Module 1: OSPF Underlay"
+  hosts: dc2_fabric
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Configure loopback0"
+      arista.eos.eos_config:
+        lines:
+          - "description router-id"
+          - "ip address {{ loopback0_ip }}"
+          - "ip ospf area {{ ospf_area }}"
+        parents: "interface Loopback0"
+
+    - name: "{{ hostname }} — Configure loopback1"
+      arista.eos.eos_config:
+        lines:
+          - "description VTEP-SOURCE"
+          - "ip address {{ loopback1_ip }}"
+          - "ip ospf area {{ ospf_area }}"
+        parents: "interface Loopback1"
+      when: loopback1_ip is defined
+
+    - name: "{{ hostname }} — Configure P2P underlay interfaces"
+      arista.eos.eos_config:
+        lines:
+          - "description {{ item.description }}"
+          - "no switchport"
+          - "mtu 9214"
+          - "ip address {{ item.ip }}"
+          - "ip ospf network point-to-point"
+          - "ip ospf area {{ ospf_area }}"
+          - "no shutdown"
+        parents: "interface {{ item.name }}"
+      loop: "{{ underlay_interfaces }}"
+      loop_control:
+        label: "{{ item.name }} — {{ item.ip }}"
+
+    - name: "{{ hostname }} — Configure OSPF process"
+      arista.eos.eos_config:
+        lines:
+          - "router-id {{ router_id }}"
+          - "passive-interface default"
+          - "no passive-interface Loopback0"
+          - "no passive-interface Loopback1"
+        parents: "router ospf {{ ospf_process }}"
+
+    - name: "{{ hostname }} — Remove passive on underlay interfaces"
+      arista.eos.eos_config:
+        lines:
+          - "no passive-interface {{ item.name }}"
+        parents: "router ospf {{ ospf_process }}"
+      loop: "{{ underlay_interfaces }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+- name: "DC2 — Module 1: Verify OSPF"
+  hosts: dc2_fabric
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Check OSPF neighbors"
+      arista.eos.eos_command:
+        commands:
+          - "show ip ospf neighbor"
+        wait_for:
+          - "result[0] contains 'FULL'"
+        interval: 5
+        retries: 12
+      register: ospf_check
+      ignore_errors: true
+
+    - name: "{{ hostname }} — OSPF status"
+      debug:
+        msg: "OSPF: {{ 'adjacencies Full ✓' if ospf_check.stdout is defined and 'Full' in ospf_check.stdout[0] else 'NOT Full ✗' }}"
+
+    - name: "Save configuration"
+      arista.eos.eos_config:
+        save_when: always

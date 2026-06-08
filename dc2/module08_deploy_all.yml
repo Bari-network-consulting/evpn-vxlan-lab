@@ -1,0 +1,28 @@
+---
+- name: "DC2 — Step 1: OSPF Underlay"
+  import_playbook: module01_ospf_underlay.yml
+  tags: [module01, underlay]
+
+- name: "DC2 — Step 2: BGP EVPN"
+  import_playbook: module02_bgp_evpn.yml
+  tags: [module02, overlay]
+
+- name: "DC2 — Step 3: VXLAN L2 VNI"
+  import_playbook: module03_vxlan_l2vni.yml
+  tags: [module03, vxlan]
+
+- name: "DC2 — Step 4: Symmetric IRB"
+  import_playbook: module04_symmetric_irb.yml
+  tags: [module04, irb]
+
+- name: "DC2 — Step 5: ESI Multihoming"
+  import_playbook: module05_esi_multihoming.yml
+  tags: [module05, esi]
+
+- name: "DC2 — Step 6: Border Leaf"
+  import_playbook: module06_border_leaf.yml
+  tags: [module06, border_leaf]
+
+- name: "DC2 — Step 7: End-to-End Verification"
+  import_playbook: module07_verify.yml
+  tags: [module07, verify]

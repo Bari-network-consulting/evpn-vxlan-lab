@@ -1,0 +1,83 @@
+---
+- name: "DC2 — Module 4: Symmetric IRB"
+  hosts: dc2_fabric
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Configure VRF instances"
+      arista.eos.eos_config:
+        lines:
+          - "vrf instance {{ item.vrf }}"
+      loop: "{{ tenants }}"
+      loop_control:
+        label: "VRF {{ item.vrf }}"
+
+    - name: "{{ hostname }} — Enable IP routing per VRF"
+      arista.eos.eos_config:
+        lines:
+          - "ip routing vrf {{ item.vrf }}"
+      loop: "{{ tenants }}"
+      loop_control:
+        label: "VRF {{ item.vrf }}"
+
+    - name: "{{ hostname }} — Configure anycast gateway MAC"
+      arista.eos.eos_config:
+        lines:
+          - "ip virtual-router mac-address {{ anycast_gw_mac }}"
+
+    - name: "{{ hostname }} — Map L3 VNI to VRF on VXLAN"
+      arista.eos.eos_config:
+        lines:
+          - "vxlan vrf {{ item.vrf }} vni {{ item.l3vni }}"
+        parents: "interface Vxlan1"
+      loop: "{{ tenants }}"
+      loop_control:
+        label: "VRF {{ item.vrf }} → L3VNI {{ item.l3vni }}"
+      when: role in ['leaf', 'border_leaf']
+
+    - name: "{{ hostname }} — Configure L2 VNI SVIs (anycast gateway)"
+      arista.eos.eos_config:
+        lines:
+          - "description {{ item.svi_name }}"
+          - "vrf {{ item.vrf }}"
+          - "ip address virtual {{ item.anycast_gw }}"
+          - "no shutdown"
+        parents: "interface Vlan{{ item.svi_vlan }}"
+      loop: "{{ tenants }}"
+      loop_control:
+        label: "Vlan{{ item.svi_vlan }} — {{ item.anycast_gw }}"
+      when: role in ['leaf', 'border_leaf']
+
+    - name: "{{ hostname }} — Configure BGP per VRF"
+      arista.eos.eos_config:
+        lines:
+          - "rd {{ bgp_router_id }}:{{ item.l3vni }}"
+          - "route-target import evpn {{ item.l3vni }}:{{ item.l3vni }}"
+          - "route-target export evpn {{ item.l3vni }}:{{ item.l3vni }}"
+          - "redistribute connected"
+        parents:
+          - "router bgp {{ bgp_as }}"
+          - "vrf {{ item.vrf }}"
+      loop: "{{ tenants }}"
+      loop_control:
+        label: "BGP VRF {{ item.vrf }}"
+      when: role in ['leaf', 'border_leaf']
+
+- name: "DC2 — Module 4: Verify IRB"
+  hosts: dc2_leaves:dc2_border
+  gather_facts: false
+
+  tasks:
+    - name: "{{ hostname }} — Verify VXLAN VNI mapping"
+      arista.eos.eos_command:
+        commands:
+          - "show vxlan vni"
+      register: vni_check
+
+    - name: "{{ hostname }} — VNI status"
+      debug:
+        msg: "VNIs: {{ vni_check.stdout[0] | regex_findall('active') | length }} active"
+
+    - name: "Save configuration"
+      arista.eos.eos_config:
+        save_when: always
