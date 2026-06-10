@@ -55,7 +55,7 @@
     - name: "{{ hostname }} — Check ESI status"
       arista.eos.eos_command:
         commands:
-          - "show bgp evpn es"
+          - "show bgp evpn instance"
       register: esi_check
       ignore_errors: true
 
